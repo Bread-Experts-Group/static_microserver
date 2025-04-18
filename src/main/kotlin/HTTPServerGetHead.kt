@@ -1,0 +1,142 @@
+package org.bread_experts_group
+
+import org.bread_experts_group.http.HTTPMethod
+import org.bread_experts_group.http.HTTPRangeHeader
+import org.bread_experts_group.http.HTTPRequest
+import org.bread_experts_group.http.HTTPResponse
+import org.bread_experts_group.http.html.DirectoryListing
+import org.bread_experts_group.socket.failquick.FailQuickOutputStream
+import org.bread_experts_group.socket.writeString
+import java.io.File
+import java.io.FileInputStream
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.logging.Logger
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.math.min
+
+val unauthorizedHeadersGet = mapOf(
+	"WWW-Authenticate" to "Basic realm=\"Access to file GET\", charset=\"UTF-8\"",
+)
+val unauthorizedHeadersList = mapOf(
+	"WWW-Authenticate" to "Basic realm=\"Access to directory listing\", charset=\"UTF-8\"",
+)
+
+private val getLogger = Logger.getLogger("Static Server GET/HEAD")
+
+@OptIn(ExperimentalEncodingApi::class)
+fun httpServerGetHead(
+	stores: List<File>,
+	storePath: String,
+	request: HTTPRequest,
+	nOut: FailQuickOutputStream,
+	getCredentials: Map<String, Pair<String, Boolean>>? = null,
+	directoryListing: Boolean = false
+) {
+	var canDirectoryList = if (!getCredentials.isNullOrEmpty()) {
+		val authorization = request.headers["Authorization"]
+		if (authorization == null) {
+			getLogger.warning { "No user provided, unauthorized for GET" }
+			HTTPResponse(401, request.version, unauthorizedHeadersGet, "")
+				.write(nOut)
+			return
+		}
+		val pair = Base64.decode(authorization.substringAfter("Basic "))
+			.decodeToString()
+			.split(':')
+		val password = getCredentials[pair[0]]
+		if (password == null || password.first != pair[1]) {
+			getLogger.warning { "\"${pair[0]}\" unauthorized for GET, not a user or wrong password" }
+			HTTPResponse(403, request.version, unauthorizedHeadersGet, "")
+				.write(nOut)
+			return
+		}
+		getLogger.info { "\"${pair[0]}\" authorized." }
+		password.second
+	} else true
+
+	stores.firstOrNull {
+		val requestedPath = it.resolve(storePath).absoluteFile.normalize()
+		if (requestedPath.exists()) {
+			if (requestedPath.isFile) {
+				getLogger.fine { "Found file for \"$storePath\" at \"${requestedPath.canonicalPath}\"" }
+				val modifiedSince = request.headers["If-Modified-Since"]
+				val lastModifiedStr = DateTimeFormatter.RFC_1123_DATE_TIME.format(
+					ZonedDateTime.ofInstant(
+						Instant.ofEpochMilli(requestedPath.lastModified()),
+						ZoneOffset.UTC
+					)
+				)
+				var transferenceRegions = listOf(0L to requestedPath.length())
+				val rangeHeader = request.headers["Range"]
+				var size = if (rangeHeader != null) {
+					val parsed = HTTPRangeHeader.parse(rangeHeader, requestedPath)
+					transferenceRegions = parsed.ranges
+					parsed.totalSize
+				} else {
+					requestedPath.length()
+				}
+				val headers = mapOf(
+					"Last-Modified" to lastModifiedStr,
+					"Content-Disposition" to "attachment; filename=\"${requestedPath.name}\""
+				)
+				if (modifiedSince == lastModifiedStr) {
+					HTTPResponse(
+						304, request.version, headers, size
+					).write(nOut)
+				} else {
+					HTTPResponse(
+						200, request.version,
+						headers, size
+					).write(nOut)
+					if (request.method == HTTPMethod.GET) {
+						val stream = FileInputStream(requestedPath)
+						transferenceRegions.forEach {
+							stream.channel.position(it.first)
+							var length = (it.second - it.first) + 1
+							while (length > 0) {
+								val truncated = min(length, 1048576).toInt()
+								nOut.write(stream.readNBytes(truncated))
+								length -= truncated
+							}
+						}
+						stream.close()
+					}
+				}
+				true
+			} else if (directoryListing && requestedPath.isDirectory) {
+				if (!canDirectoryList) {
+					HTTPResponse(403, request.version, unauthorizedHeadersList, "")
+						.write(nOut)
+					return
+				}
+				getLogger.fine { "Directory listing for \"${requestedPath.invariantSeparatorsPath}\"" }
+				val (data, hash) = DirectoryListing.getDirectoryListingHTML(it, requestedPath)
+				val etag = request.headers["If-None-Match"]
+				val wrappedHash = "\"$hash\""
+				val headers = mapOf(
+					"Content-Type" to "text/html",
+					"ETag" to wrappedHash
+				)
+				if (etag == "*" || etag?.contains(wrappedHash) == true) {
+					HTTPResponse(
+						304, request.version, headers, data.length
+					).write(nOut)
+				} else {
+					HTTPResponse(
+						200, request.version, headers, data.length
+					).write(nOut)
+					if (request.method == HTTPMethod.GET) nOut.writeString(data)
+				}
+				true
+			} else false
+		} else false
+	} ?: run {
+		getLogger.warning { "No found file for \"$storePath\"" }
+		HTTPResponse(404, request.version, emptyMap(), "")
+			.write(nOut)
+	}
+}
