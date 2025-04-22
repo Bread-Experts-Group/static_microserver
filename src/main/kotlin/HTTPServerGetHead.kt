@@ -70,38 +70,45 @@ fun httpServerGetHead(
 						ZoneOffset.UTC
 					)
 				)
-				var transferenceRegions = listOf(0L to requestedPath.length())
+				var transferenceRegion = 0L to requestedPath.length()
 				val rangeHeader = request.headers["Range"]
 				var size = if (rangeHeader != null) {
 					val parsed = HTTPRangeHeader.parse(rangeHeader, requestedPath)
-					transferenceRegions = parsed.ranges
+					transferenceRegion = parsed.ranges.first()
 					parsed.totalSize
 				} else {
 					requestedPath.length()
 				}
-				val headers = mapOf(
-					"Last-Modified" to lastModifiedStr,
-					"Content-Disposition" to "attachment; filename=\"${requestedPath.name}\""
-				)
+				val headers = buildMap {
+					set("Accept-Ranges", "bytes")
+					if (rangeHeader != null) {
+						set(
+							"Content-Range",
+							"bytes ${transferenceRegion.first}-${transferenceRegion.second}/${requestedPath.length()}"
+						)
+					}
+					set("Last-Modified", lastModifiedStr)
+					val (mime, download) = mimeMap[requestedPath.extension] ?: ("application/octet-stream" to true)
+					set("Content-Type", mime)
+					set("Content-Disposition", "${if (download) "attachment" else "inline"}; filename=\"${requestedPath.name}\"")
+				}
 				if (modifiedSince == lastModifiedStr) {
 					HTTPResponse(
 						304, request.version, headers, size
 					).write(nOut)
 				} else {
 					HTTPResponse(
-						200, request.version,
+						if (rangeHeader != null) 206 else 200, request.version,
 						headers, size
 					).write(nOut)
 					if (request.method == HTTPMethod.GET) {
 						val stream = FileInputStream(requestedPath)
-						transferenceRegions.forEach {
-							stream.channel.position(it.first)
-							var length = (it.second - it.first) + 1
-							while (length > 0) {
-								val truncated = min(length, 1048576).toInt()
-								nOut.write(stream.readNBytes(truncated))
-								length -= truncated
-							}
+						stream.channel.position(transferenceRegion.first)
+						var length = (transferenceRegion.second - transferenceRegion.first) + 1
+						while (length > 0) {
+							val truncated = min(length, 1048576).toInt()
+							nOut.write(stream.readNBytes(truncated))
+							length -= truncated
 						}
 						stream.close()
 					}
