@@ -36,7 +36,7 @@ fun httpServerGetHead(
 	getCredentials: Map<String, Pair<String, Boolean>>? = null,
 	directoryListing: Boolean = false
 ) {
-	var canDirectoryList = if (!getCredentials.isNullOrEmpty()) {
+	val canDirectoryList = if (!getCredentials.isNullOrEmpty()) {
 		val authorization = request.headers["Authorization"]
 		if (authorization == null) {
 			getLogger.warning { "No user provided, unauthorized for GET" }
@@ -72,7 +72,7 @@ fun httpServerGetHead(
 				)
 				var transferenceRegion = 0L to requestedPath.length()
 				val rangeHeader = request.headers["Range"]
-				var size = if (rangeHeader != null) {
+				val size = if (rangeHeader != null) {
 					val parsed = HTTPRangeHeader.parse(rangeHeader, requestedPath)
 					transferenceRegion = parsed.ranges.first()
 					parsed.totalSize
@@ -125,7 +125,7 @@ fun httpServerGetHead(
 				val etag = request.headers["If-None-Match"]
 				val wrappedHash = "\"$hash\""
 				val headers = mapOf(
-					"Content-Type" to "text/html",
+					"Content-Type" to "text/html;charset=UTF-8",
 					"ETag" to wrappedHash
 				)
 				if (etag == "*" || etag?.contains(wrappedHash) == true) {
