@@ -92,6 +92,7 @@ publishing {
 }
 signing {
 	useGpgCmd()
+	sign(publishing.publications["mavenKotlinDist"])
 	sign(publishing.publications["mavenKotlin"])
 }
 tasks.javadoc {
