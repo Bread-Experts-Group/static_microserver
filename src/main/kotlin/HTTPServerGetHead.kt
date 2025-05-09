@@ -5,7 +5,6 @@ import org.bread_experts_group.http.HTTPRangeHeader
 import org.bread_experts_group.http.HTTPRequest
 import org.bread_experts_group.http.HTTPResponse
 import org.bread_experts_group.http.html.DirectoryListing
-import org.bread_experts_group.socket.writeString
 import java.io.File
 import java.io.FileInputStream
 import java.io.OutputStream
