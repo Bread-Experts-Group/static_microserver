@@ -3,11 +3,13 @@ package org.bread_experts_group
 import org.bread_experts_group.http.HTTPMethod
 import org.bread_experts_group.http.HTTPRequest
 import org.bread_experts_group.http.HTTPResponse
+import org.bread_experts_group.http.HTTPVersion
 import java.io.EOFException
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.URISyntaxException
 import java.util.logging.Logger
 
 val standardFlags = listOf(
@@ -56,14 +58,18 @@ fun staticMain(
 		Thread.ofVirtual().name("Static-${sock.remoteSocketAddress}").start {
 			try {
 				while (true) {
-					val request = HTTPRequest.read(sock.inputStream)
+					val request = try {
+						HTTPRequest.read(sock.inputStream)
+					} catch (_: URISyntaxException) {
+						HTTPResponse(404, HTTPVersion.HTTP_1_1).write(sock.outputStream)
+						continue
+					}
 					val method = methods[request.method]
 					if (method != null) method.invoke(
 						stores,
 						request,
 						sock
 					) else HTTPResponse(405, request.version).write(sock.outputStream)
-					sock.outputStream.flush()
 				}
 			} catch (_: EOFException) {
 			}
