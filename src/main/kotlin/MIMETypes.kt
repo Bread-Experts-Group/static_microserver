@@ -1,6 +1,6 @@
 package org.bread_experts_group
 
-val mimeMap = mapOf<String, Pair<String, Boolean>>(
+val mimeMap = mapOf(
 	"json" to ("application/json;charset=UTF-8" to false),
 	"jsonld" to ("application/ld+json;charset=UTF-8" to false),
 	"ogx" to ("application/ogg" to true),
