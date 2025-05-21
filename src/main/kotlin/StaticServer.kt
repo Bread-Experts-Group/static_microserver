@@ -1,23 +1,34 @@
-package org.bread_experts_group
+package org.bread_experts_group.static
 
+import org.bread_experts_group.Flag
+import org.bread_experts_group.MultipleArgs
+import org.bread_experts_group.SingleArgs
 import org.bread_experts_group.http.HTTPMethod
 import org.bread_experts_group.http.HTTPRequest
 import org.bread_experts_group.http.HTTPResponse
 import org.bread_experts_group.http.HTTPVersion
+import org.bread_experts_group.logging.ColoredLogger
+import org.bread_experts_group.readArgs
+import org.bread_experts_group.stringToInt
 import java.io.EOFException
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URISyntaxException
-import java.util.logging.Logger
 
 val standardFlags = listOf(
-	Flag("ip", default = "0.0.0.0"),
-	Flag("port", default = 443, conv = ::stringToInt)
+	Flag(
+		"ip", "The IP address on which to listen to for requests.",
+		default = "0.0.0.0"
+	),
+	Flag(
+		"port", "The TCP port on which to listen to for requests.",
+		default = 80, conv = ::stringToInt
+	)
 )
 
-private val socketLogger = Logger.getLogger("Static Server Socket Retrieval")
+private val socketLogger = ColoredLogger.newLogger("Static Server Socket Retrieval")
 fun getSocket(
 	args: Array<String>,
 	vararg flags: Flag<*>
@@ -28,7 +39,12 @@ fun getSocket(
 	flags: List<Flag<*>>
 ): Triple<SingleArgs, MultipleArgs, ServerSocket> {
 	socketLogger.fine("Argument read")
-	val (singleArgs, multipleArgs) = readArgs(args, standardFlags + flags)
+	val (singleArgs, multipleArgs) = readArgs(
+		args,
+		standardFlags + flags,
+		"static_microserver",
+		"Distribution of software for Bread Experts Group static file servers.",
+	)
 	socketLogger.finer("Socket retrieval")
 	val serverSocket = ServerSocket()
 	socketLogger.fine("Socket bind")
@@ -44,7 +60,7 @@ fun getSocket(
 
 typealias ServerHandle = (stores: List<File>, request: HTTPRequest, sock: Socket) -> Unit
 
-private val mainLogger = Logger.getLogger("Static Server Main")
+private val mainLogger = ColoredLogger.newLogger("Static Server Main")
 fun staticMain(
 	multipleArgs: MultipleArgs,
 	serverSocket: ServerSocket,

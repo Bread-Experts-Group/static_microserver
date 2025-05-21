@@ -1,18 +1,19 @@
-package org.bread_experts_group
+package org.bread_experts_group.static
 
 import org.bread_experts_group.http.HTTPMethod
 import org.bread_experts_group.http.HTTPRangeHeader
 import org.bread_experts_group.http.HTTPRequest
 import org.bread_experts_group.http.HTTPResponse
 import org.bread_experts_group.http.html.DirectoryListing
+import org.bread_experts_group.logging.ColoredLogger
 import java.io.File
 import java.io.FileInputStream
 import java.io.OutputStream
+import java.nio.file.Files
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import java.util.logging.Logger
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.min
@@ -22,7 +23,7 @@ val unauthorizedHeadersGet = mapOf(
 	"WWW-Authenticate" to "Basic realm=\"Access to file GET\", charset=\"UTF-8\"",
 )
 
-private val getLogger = Logger.getLogger("Static Server GET/HEAD")
+private val getLogger = ColoredLogger.newLogger("Static Server GET/HEAD")
 
 @OptIn(ExperimentalEncodingApi::class)
 fun checkAuthorization(
@@ -92,11 +93,16 @@ fun httpServerGetHead(
 					)
 				}
 				set("Last-Modified", lastModifiedStr)
-				val (mime, download) = mimeMap[requestedPath.extension] ?: ("application/octet-stream" to true)
+				val (mime, download) = mimeMap[requestedPath.extension]
+					?: Files.probeContentType(requestedPath.toPath())?.let { m -> m to DownloadFlag.DISPLAY }
+					?: ("application/octet-stream" to DownloadFlag.DOWNLOAD)
 				set("Content-Type", mime)
 				set(
 					"Content-Disposition",
-					"${if (download) "attachment" else "inline"}; filename=\"${requestedPath.name}\""
+					"${
+						if (download == DownloadFlag.DOWNLOAD) "attachment"
+						else "inline"
+					}; filename=\"${requestedPath.name}\""
 				)
 			}
 			if (modifiedSince == lastModifiedStr) {

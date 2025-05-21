@@ -1,5 +1,6 @@
-package org.bread_experts_group
+package org.bread_experts_group.static
 
+import org.bread_experts_group.Flag
 import org.bread_experts_group.http.HTTPMethod
 import org.bread_experts_group.http.html.DirectoryListing
 
@@ -7,9 +8,22 @@ fun main(args: Array<String>) {
 	val (singleArgs, multipleArgs, serverSocket) = getSocket(
 		args,
 		standardFlags + listOf(
-			Flag("directory_listing_color", default = "off"),
-			Flag<String>("get_credential", repeatable = true),
-			Flag<String>("store", repeatable = true)
+			Flag(
+				"directory_listing_color",
+				"The CSS background color the directory listing view will show. \"off\" disables the view.",
+				default = "off"
+			),
+			Flag<String>(
+				"get_credential",
+				"A credential required to access files or directory listings in a store.",
+				repeatable = true
+			),
+			Flag<String>(
+				"store",
+				"A folder which the server uses to search for files. The first stores are of higher precedence.",
+				repeatable = true,
+				required = 1
+			)
 		)
 	)
 	val getCredentialTable = multipleArgs["get_credential"]?.associate {
