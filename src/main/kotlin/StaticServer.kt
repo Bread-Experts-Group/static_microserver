@@ -45,7 +45,6 @@ fun getSocket(
 	flags: List<Flag<*>>
 ): Triple<SingleArgs, MultipleArgs, ServerSocket> {
 	socketLogger.fine("Argument read")
-	socketLogger.info(args.joinToString (","))
 	val (singleArgs, multipleArgs) = readArgs(
 		args,
 		standardFlags + flags,
