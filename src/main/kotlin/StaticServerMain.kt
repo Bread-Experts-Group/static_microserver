@@ -7,18 +7,20 @@ import org.bread_experts_group.http.html.DirectoryListing
 fun main(args: Array<String>) {
 	val (singleArgs, multipleArgs, serverSocket) = getSocket(
 		args,
-		standardFlags + listOf(
+		"static_microserver",
+		"Distribution of software for Bread Experts Group static file servers.",
+		listOf(
 			Flag(
 				"directory_listing_color",
 				"The CSS background color the directory listing view will show. \"off\" disables the view.",
 				default = "off"
 			),
-			Flag<String>(
+			Flag(
 				"get_credential",
 				"A credential required to access files or directory listings in a store.",
 				repeatable = true
 			),
-			Flag<String>(
+			Flag(
 				"store",
 				"A folder which the server uses to search for files. The first stores are of higher precedence.",
 				repeatable = true,

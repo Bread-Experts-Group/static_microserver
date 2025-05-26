@@ -10,11 +10,13 @@ import org.bread_experts_group.http.HTTPVersion
 import org.bread_experts_group.logging.ColoredLogger
 import org.bread_experts_group.readArgs
 import org.bread_experts_group.stringToInt
-import java.io.EOFException
 import java.io.File
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketException
+import java.net.SocketTimeoutException
 import java.net.URISyntaxException
 
 val standardFlags = listOf(
@@ -31,19 +33,24 @@ val standardFlags = listOf(
 private val socketLogger = ColoredLogger.newLogger("Static Server Socket Retrieval")
 fun getSocket(
 	args: Array<String>,
+	projectName: String,
+	projectUsage: String,
 	vararg flags: Flag<*>
-) = getSocket(args, flags.toList())
+) = getSocket(args, projectName, projectUsage, flags.toList())
 
 fun getSocket(
 	args: Array<String>,
+	projectName: String,
+	projectUsage: String,
 	flags: List<Flag<*>>
 ): Triple<SingleArgs, MultipleArgs, ServerSocket> {
 	socketLogger.fine("Argument read")
+	socketLogger.info(args.joinToString (","))
 	val (singleArgs, multipleArgs) = readArgs(
 		args,
 		standardFlags + flags,
-		"static_microserver",
-		"Distribution of software for Bread Experts Group static file servers.",
+		projectName,
+		projectUsage
 	)
 	socketLogger.finer("Socket retrieval")
 	val serverSocket = ServerSocket()
@@ -71,25 +78,36 @@ fun staticMain(
 	val stores = multipleArgs["store"]?.map { File(it as String).absoluteFile.normalize() } ?: emptyList()
 	while (true) {
 		val sock = serverSocket.accept()
+		sock.keepAlive = true
+		sock.soTimeout = 60000
+		sock.setSoLinger(true, 2)
 		Thread.ofVirtual().name("Static-${sock.remoteSocketAddress}").start {
+			val localLogger = ColoredLogger.newLogger("${sock.remoteSocketAddress}")
 			try {
 				while (true) {
 					val request = try {
 						HTTPRequest.read(sock.inputStream)
 					} catch (_: URISyntaxException) {
 						HTTPResponse(404, HTTPVersion.HTTP_1_1).write(sock.outputStream)
-						continue
+						break
 					}
 					val method = methods[request.method]
 					if (method != null) method.invoke(
 						stores,
 						request,
 						sock
-					) else HTTPResponse(405, request.version).write(sock.outputStream)
+					) else {
+						HTTPResponse(405, request.version).write(sock.outputStream)
+						break
+					}
 				}
-			} catch (_: EOFException) {
+			} catch (_: SocketTimeoutException) {
+			} catch (_: SocketException) {
+			} catch (e: IOException) {
+				localLogger.warning { "IO failure encountered; [${e.javaClass.canonicalName}] ${e.localizedMessage}" }
+			} finally {
+				sock.close()
 			}
-			sock.close()
 		}
 	}
 }

@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "org.bread_experts_group"
-version = "2.1.0"
+version = "2.1.1"
 
 repositories {
 	mavenCentral()
@@ -18,14 +18,14 @@ repositories {
 }
 
 dependencies {
-	implementation("org.bread_experts_group:bread_server_lib-code:2.5.2")
+	implementation("org.bread_experts_group:bread_server_lib-code:2.8.3")
 }
 
 tasks.test {
 	useJUnitPlatform()
 }
 application {
-	mainClass = "org.bread_experts_group.StaticServerMainKt"
+	mainClass = "org.bread_experts_group.static.StaticServerMainKt"
 	applicationDefaultJvmArgs = listOf("-XX:+UseZGC", "-XX:+ZGenerational", "-Xmx256m", "-XX:SoftMaxHeapSize=128m")
 }
 
