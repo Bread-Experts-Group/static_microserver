@@ -1,4 +1,4 @@
-package org.bread_experts_group.static
+package org.bread_experts_group.static_microserver
 
 enum class DownloadFlag {
 	DOWNLOAD,

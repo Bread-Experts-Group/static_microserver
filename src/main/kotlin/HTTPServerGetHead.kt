@@ -1,4 +1,4 @@
-package org.bread_experts_group.static
+package org.bread_experts_group.static_microserver
 
 import org.bread_experts_group.http.HTTPMethod
 import org.bread_experts_group.http.HTTPRangeHeader
