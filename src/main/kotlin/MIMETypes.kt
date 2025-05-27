@@ -44,6 +44,7 @@ val mimeMap = mapOf(
 	"7z" to ("application/x-7z-compressed" to DownloadFlag.DOWNLOAD),
 	"exe" to ("application/vnd.microsoft.portable-executable" to DownloadFlag.DOWNLOAD),
 	"txt" to ("text/plain;charset=UTF-8" to DownloadFlag.DISPLAY),
+	"begsm" to ("text/plain;charset=UTF-8" to DownloadFlag.DISPLAY),
 	"kt" to ("text/plain;charset=UTF-8" to DownloadFlag.DISPLAY),
 	"css" to ("text/css;charset=UTF-8" to DownloadFlag.DISPLAY),
 	"csv" to ("text/csv;charset=UTF-8" to DownloadFlag.DISPLAY),

@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "org.bread_experts_group"
-version = "2.4.0"
+version = "2.5.0"
 
 repositories {
 	mavenCentral()
@@ -18,7 +18,7 @@ repositories {
 }
 
 dependencies {
-	implementation("org.bread_experts_group:bread_server_lib-code:2.20.3")
+	implementation("org.bread_experts_group:bread_server_lib-code:2.20.4")
 }
 
 tasks.test {

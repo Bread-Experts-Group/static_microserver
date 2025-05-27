@@ -8,6 +8,7 @@ import org.bread_experts_group.http.html.DirectoryListing
 import org.bread_experts_group.http.html.VirtualFileChannel
 import org.bread_experts_group.logging.ColoredLogger
 import java.io.File
+import java.io.FileReader
 import java.io.OutputStream
 import java.lang.Exception
 import java.net.SocketException
@@ -58,6 +59,7 @@ fun getFile(
 	channel: SeekableByteChannel,
 	out: OutputStream,
 	fileName: String,
+	addedHeaders: Map<String, String>,
 	lastModified: Long = System.currentTimeMillis()
 ) {
 	val modifiedSince = request.headers["If-Modified-Since"]
@@ -93,7 +95,7 @@ fun getFile(
 				else "inline"
 			}; filename=\"$fileName\""
 		)
-	}
+	} + addedHeaders
 	if (modifiedSince == lastModifiedStr) {
 		HTTPResponse(
 			304, request.version, headers, totalSize
@@ -147,7 +149,8 @@ fun httpServerGetHead(
 			style.size.toLong(),
 			VirtualFileChannel(style),
 			out,
-			DirectoryListing.directoryListingFile
+			DirectoryListing.directoryListingFile,
+			emptyMap()
 		)
 		out.flush()
 		return
@@ -157,13 +160,34 @@ fun httpServerGetHead(
 	stores.firstOrNull {
 		val requestedPath = it.resolve(storePath).canonicalFile
 		if (!(requestedPath.canRead() && requestedPath.startsWith(it))) return@firstOrNull false
+
+		val modifierFile = requestedPath.parentFile.resolve("beg_sm_local_modifier.begsm")
+		val addedHeaders = mutableMapOf<String, String>()
+		if (modifierFile.exists() && modifierFile.canRead()) {
+			val reader = FileReader(modifierFile)
+			var thisIsSet = false
+			for (line in reader.readLines()) {
+				if (line.startsWith('#') || line.isBlank()) continue
+				if (!thisIsSet) {
+					val target = line.substringAfter('=', "<.not.>")
+					if (target != requestedPath.name) continue
+					thisIsSet = true
+					continue
+				}
+				if (!line.contains(':')) break
+				val (headerName, headerValue) = line.split(':', limit = 2)
+				addedHeaders[headerName] = headerValue
+			}
+		}
+
 		if (requestedPath.isFile) {
 			getFile(
 				request,
 				requestedPath.length(),
 				FileChannel.open(requestedPath.toPath()),
 				out,
-				requestedPath.name
+				requestedPath.name,
+				addedHeaders
 			)
 			true
 		} else if (directoryListing && requestedPath.isDirectory) {
@@ -183,7 +207,7 @@ fun httpServerGetHead(
 			val headers = mapOf(
 				"Content-Type" to "text/html;charset=UTF-8",
 				"ETag" to wrappedHash
-			)
+			) + addedHeaders
 			if (etag == "*" || etag?.contains(wrappedHash) == true) {
 				HTTPResponse(
 					304, request.version, headers
