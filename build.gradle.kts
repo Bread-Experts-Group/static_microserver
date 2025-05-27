@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "org.bread_experts_group"
-version = "2.2.0"
+version = "2.2.1"
 
 repositories {
 	mavenCentral()
@@ -18,7 +18,7 @@ repositories {
 }
 
 dependencies {
-	implementation("org.bread_experts_group:bread_server_lib-code:2.18.3")
+	implementation("org.bread_experts_group:bread_server_lib-code:2.18.4")
 }
 
 tasks.test {
@@ -29,7 +29,8 @@ application {
 	applicationDefaultJvmArgs = listOf(
 		"-XX:+UseZGC", "-Xms256m", "-Xmx256m", "-XX:SoftMaxHeapSize=128m", "-server",
 		"-XX:MaxDirectMemorySize=128m", "-XX:+AlwaysPreTouch", "-XX:+UseLargePages",
-		"-XX:+DisableExplicitGC", "-XX:MaxTenuringThreshold=1", "-XX:MaxGCPauseMillis=20"
+		"-XX:+DisableExplicitGC", "-XX:MaxTenuringThreshold=1", "-XX:MaxGCPauseMillis=20",
+		"-Djdk.tls.rejectClientInitiatedRenegotiation=true"
 	)
 }
 
