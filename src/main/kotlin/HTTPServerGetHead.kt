@@ -9,6 +9,8 @@ import org.bread_experts_group.http.html.VirtualFileChannel
 import org.bread_experts_group.logging.ColoredLogger
 import java.io.File
 import java.io.OutputStream
+import java.lang.Exception
+import java.net.SocketException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.channels.SeekableByteChannel
@@ -18,6 +20,8 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Base64
 import java.util.Locale
+import java.util.logging.Level
+import kotlin.math.min
 import kotlin.text.substringAfter
 
 val unauthorizedHeadersGet = mapOf(
@@ -65,7 +69,7 @@ fun getFile(
 	)
 	var transferenceRegion = 0L to size
 	val rangeHeader = request.headers["Range"]
-	val size = if (rangeHeader != null) {
+	if (rangeHeader != null) {
 		val parsed = HTTPRangeHeader.parse(rangeHeader, size)
 		transferenceRegion = parsed.ranges.first()
 		parsed.totalSize
@@ -90,25 +94,34 @@ fun getFile(
 			}; filename=\"$fileName\""
 		)
 	}
+	var length = (transferenceRegion.second - transferenceRegion.first) + 1
 	if (modifiedSince == lastModifiedStr) {
 		HTTPResponse(
-			304, request.version, headers, size
+			304, request.version, headers, length
 		).write(out)
 	} else {
 		HTTPResponse(
 			if (rangeHeader != null) 206 else 200, request.version,
-			headers, size
+			headers, length
 		).write(out)
 		if (request.method == HTTPMethod.GET) {
-			var length = transferenceRegion.second - transferenceRegion.first
-			val buffer = ByteBuffer.allocateDirect(1048576)
-			while (length > 0) {
-				val next = channel.read(buffer)
-				buffer.flip()
-				val readIn = ByteArray(next)
-				buffer.get(readIn)
-				out.write(readIn)
-				length -= next
+			channel.position(transferenceRegion.first)
+			val buffer = ByteBuffer.allocateDirect(1000000)
+			try {
+				while (length > 0) {
+					buffer.limit(min(buffer.capacity(), min(length, Int.MAX_VALUE.toLong()).toInt()))
+					val next = channel.read(buffer)
+					if (next == -1) break
+					buffer.flip()
+					val readIn = ByteArray(next)
+					buffer.get(readIn)
+					out.write(readIn)
+					buffer.flip()
+					length -= next
+				}
+			} catch (_: SocketException) {
+			} catch (e: Exception) {
+				getLogger.log(Level.WARNING, e) { "Problem while sending data to client [channel]" }
 			}
 		}
 	}
