@@ -168,9 +168,15 @@ fun httpServerGetHead(
 			true
 		} else if (directoryListing && requestedPath.isDirectory) {
 			getLogger.fine { "Directory listing for \"${requestedPath.invariantSeparatorsPath}\"" }
+			val locale = request.headers["Accept-Language"]?.let { languageTags ->
+				Locale.lookup(
+					Locale.LanguageRange.parse(languageTags),
+					Locale.getAvailableLocales().toList()
+				)
+			} ?: Locale.getDefault()
 			val (data, hash) = DirectoryListing.getDirectoryListingHTML(
 				it, requestedPath,
-				request.headers["Accept-Language"]?.let { l -> Locale.forLanguageTag(l) } ?: Locale.getDefault()
+				locale
 			)
 			val etag = request.headers["If-None-Match"]
 			val wrappedHash = "\"$hash\""
