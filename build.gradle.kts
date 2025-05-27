@@ -18,7 +18,7 @@ repositories {
 }
 
 dependencies {
-	implementation("org.bread_experts_group:bread_server_lib-code:2.19.0")
+	implementation("org.bread_experts_group:bread_server_lib-code:2.20.3")
 }
 
 tasks.test {
