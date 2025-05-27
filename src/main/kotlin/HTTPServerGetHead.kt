@@ -5,18 +5,19 @@ import org.bread_experts_group.http.HTTPRangeHeader
 import org.bread_experts_group.http.HTTPRequest
 import org.bread_experts_group.http.HTTPResponse
 import org.bread_experts_group.http.html.DirectoryListing
+import org.bread_experts_group.http.html.VirtualFileChannel
 import org.bread_experts_group.logging.ColoredLogger
 import java.io.File
-import java.io.FileInputStream
 import java.io.OutputStream
-import java.nio.file.Files
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
+import java.nio.channels.SeekableByteChannel
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
-import kotlin.math.min
+import java.util.Base64
+import java.util.Locale
 import kotlin.text.substringAfter
 
 val unauthorizedHeadersGet = mapOf(
@@ -24,8 +25,8 @@ val unauthorizedHeadersGet = mapOf(
 )
 
 private val getLogger = ColoredLogger.newLogger("Static Server GET/HEAD")
+private val base64Decoder = Base64.getDecoder()
 
-@OptIn(ExperimentalEncodingApi::class)
 fun checkAuthorization(
 	request: HTTPRequest,
 	credentials: Map<String, String>
@@ -35,7 +36,7 @@ fun checkAuthorization(
 		getLogger.warning { "No user provided, unauthorized for GET" }
 		return HTTPResponse(401, request.version, unauthorizedHeadersGet)
 	}
-	val pair = Base64.decode(authorization.substringAfter("Basic "))
+	val pair = base64Decoder.decode(authorization.substringAfter("Basic "))
 		.decodeToString()
 		.split(':')
 	val password = credentials[pair[0]]
@@ -47,6 +48,73 @@ fun checkAuthorization(
 	return null
 }
 
+fun getFile(
+	request: HTTPRequest,
+	size: Long,
+	channel: SeekableByteChannel,
+	out: OutputStream,
+	fileName: String,
+	lastModified: Long = System.currentTimeMillis()
+) {
+	val modifiedSince = request.headers["If-Modified-Since"]
+	val lastModifiedStr = DateTimeFormatter.RFC_1123_DATE_TIME.format(
+		ZonedDateTime.ofInstant(
+			Instant.ofEpochMilli(lastModified),
+			ZoneOffset.UTC
+		)
+	)
+	var transferenceRegion = 0L to size
+	val rangeHeader = request.headers["Range"]
+	val size = if (rangeHeader != null) {
+		val parsed = HTTPRangeHeader.parse(rangeHeader, size)
+		transferenceRegion = parsed.ranges.first()
+		parsed.totalSize
+	} else size
+	val headers = buildMap {
+		set("Accept-Ranges", "bytes")
+		if (rangeHeader != null) {
+			set(
+				"Content-Range",
+				"bytes ${transferenceRegion.first}-${transferenceRegion.second}/$size"
+			)
+		}
+		set("Last-Modified", lastModifiedStr)
+		val (mime, download) = mimeMap[fileName.substringAfterLast('.')]
+			?: ("application/octet-stream" to DownloadFlag.DOWNLOAD)
+		set("Content-Type", mime)
+		set(
+			"Content-Disposition",
+			"${
+				if (download == DownloadFlag.DOWNLOAD) "attachment"
+				else "inline"
+			}; filename=\"$fileName\""
+		)
+	}
+	if (modifiedSince == lastModifiedStr) {
+		HTTPResponse(
+			304, request.version, headers, size
+		).write(out)
+	} else {
+		HTTPResponse(
+			if (rangeHeader != null) 206 else 200, request.version,
+			headers, size
+		).write(out)
+		if (request.method == HTTPMethod.GET) {
+			var length = transferenceRegion.second - transferenceRegion.first
+			val buffer = ByteBuffer.allocateDirect(1048576)
+			while (length > 0) {
+				val next = channel.read(buffer)
+				buffer.flip()
+				val readIn = ByteArray(next)
+				buffer.get(readIn)
+				out.write(readIn)
+				length -= next
+			}
+		}
+	}
+	channel.close()
+}
+
 fun httpServerGetHead(
 	stores: List<File>,
 	request: HTTPRequest,
@@ -56,10 +124,20 @@ fun httpServerGetHead(
 ) {
 	if (!getCredentials.isNullOrEmpty()) {
 		val failResponse = checkAuthorization(request, getCredentials)
-		if (failResponse != null) {
-			failResponse.write(out)
-			return
-		}
+		if (failResponse != null) return failResponse.write(out)
+	}
+
+	if (request.path.path == '/' + DirectoryListing.directoryListingFile) {
+		val style = DirectoryListing.directoryListingStyle.toByteArray()
+		getFile(
+			request,
+			style.size.toLong(),
+			VirtualFileChannel(style),
+			out,
+			DirectoryListing.directoryListingFile
+		)
+		out.flush()
+		return
 	}
 
 	val storePath = '.' + request.path.path
@@ -67,69 +145,20 @@ fun httpServerGetHead(
 		val requestedPath = it.resolve(storePath).absoluteFile.normalize()
 		if (!requestedPath.canRead()) return@firstOrNull false
 		if (requestedPath.isFile) {
-			getLogger.fine { "Found file for \"$storePath\" at \"${requestedPath.canonicalPath}\"" }
-			val modifiedSince = request.headers["If-Modified-Since"]
-			val lastModifiedStr = DateTimeFormatter.RFC_1123_DATE_TIME.format(
-				ZonedDateTime.ofInstant(
-					Instant.ofEpochMilli(requestedPath.lastModified()),
-					ZoneOffset.UTC
-				)
+			getFile(
+				request,
+				requestedPath.length(),
+				FileChannel.open(requestedPath.toPath()),
+				out,
+				requestedPath.name
 			)
-			var transferenceRegion = 0L to requestedPath.length()
-			val rangeHeader = request.headers["Range"]
-			val size = if (rangeHeader != null) {
-				val parsed = HTTPRangeHeader.parse(rangeHeader, requestedPath)
-				transferenceRegion = parsed.ranges.first()
-				parsed.totalSize
-			} else {
-				requestedPath.length()
-			}
-			val headers = buildMap {
-				set("Accept-Ranges", "bytes")
-				if (rangeHeader != null) {
-					set(
-						"Content-Range",
-						"bytes ${transferenceRegion.first}-${transferenceRegion.second}/${requestedPath.length()}"
-					)
-				}
-				set("Last-Modified", lastModifiedStr)
-				val (mime, download) = mimeMap[requestedPath.extension]
-					?: Files.probeContentType(requestedPath.toPath())?.let { m -> m to DownloadFlag.DISPLAY }
-					?: ("application/octet-stream" to DownloadFlag.DOWNLOAD)
-				set("Content-Type", mime)
-				set(
-					"Content-Disposition",
-					"${
-						if (download == DownloadFlag.DOWNLOAD) "attachment"
-						else "inline"
-					}; filename=\"${requestedPath.name}\""
-				)
-			}
-			if (modifiedSince == lastModifiedStr) {
-				HTTPResponse(
-					304, request.version, headers, size
-				).write(out)
-			} else {
-				HTTPResponse(
-					if (rangeHeader != null) 206 else 200, request.version,
-					headers, size
-				).write(out)
-				if (request.method == HTTPMethod.GET) {
-					val stream = FileInputStream(requestedPath)
-					stream.channel.position(transferenceRegion.first)
-					var length = (transferenceRegion.second - transferenceRegion.first) + 1
-					while (length > 0) {
-						val truncated = min(length, 1048576).toInt()
-						out.write(stream.readNBytes(truncated))
-						length -= truncated
-					}
-					stream.close()
-				}
-			}
 			true
 		} else if (directoryListing && requestedPath.isDirectory) {
 			getLogger.fine { "Directory listing for \"${requestedPath.invariantSeparatorsPath}\"" }
-			val (data, hash) = DirectoryListing.getDirectoryListingHTML(it, requestedPath)
+			val (data, hash) = DirectoryListing.getDirectoryListingHTML(
+				it, requestedPath,
+				request.headers["Accept-Language"]?.let { l -> Locale.forLanguageTag(l) } ?: Locale.getDefault()
+			)
 			val etag = request.headers["If-None-Match"]
 			val wrappedHash = "\"$hash\""
 			val headers = mapOf(

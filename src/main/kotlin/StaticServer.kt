@@ -72,15 +72,15 @@ fun staticMain(
 	serverSocket: ServerSocket,
 	methods: Map<HTTPMethod, ServerHandle>
 ) {
-	Thread.currentThread().name = "Static-Main"
+	Thread.currentThread().name = "Static Main"
 	mainLogger.info("Server loop (${serverSocket.localSocketAddress})")
-	val stores = multipleArgs["store"]?.map { File(it as String).absoluteFile.normalize() } ?: emptyList()
+	val stores = multipleArgs.getValue("store").map { File(it as String).absoluteFile.normalize() }
 	while (true) {
 		val sock = serverSocket.accept()
 		sock.keepAlive = true
 		sock.soTimeout = 60000
 		sock.setSoLinger(true, 2)
-		Thread.ofVirtual().name("Static-${sock.remoteSocketAddress}").start {
+		Thread.ofVirtual().name("Static ${sock.remoteSocketAddress}").start {
 			val localLogger = ColoredLogger.newLogger("${sock.remoteSocketAddress}")
 			try {
 				while (true) {
