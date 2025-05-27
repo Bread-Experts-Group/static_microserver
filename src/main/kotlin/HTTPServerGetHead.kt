@@ -143,7 +143,7 @@ fun httpServerGetHead(
 	val storePath = '.' + request.path.path
 	stores.firstOrNull {
 		val requestedPath = it.resolve(storePath).canonicalFile
-		if (!(requestedPath.canRead() && requestedPath.startsWith(storePath))) return@firstOrNull false
+		if (!(requestedPath.canRead() && requestedPath.startsWith(it))) return@firstOrNull false
 		if (requestedPath.isFile) {
 			getFile(
 				request,
