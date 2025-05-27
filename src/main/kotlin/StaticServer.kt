@@ -78,7 +78,6 @@ fun staticMain(
 	while (true) {
 		val sock = serverSocket.accept()
 		sock.keepAlive = true
-		sock.soTimeout = 60000
 		sock.setSoLinger(true, 2)
 		Thread.ofVirtual().name("Static ${sock.remoteSocketAddress}").start {
 			val localLogger = ColoredLogger.newLogger("${sock.remoteSocketAddress}")
