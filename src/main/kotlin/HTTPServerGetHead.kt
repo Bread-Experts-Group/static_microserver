@@ -69,7 +69,7 @@ fun getFile(
 	)
 	var transferenceRegion = 0L to size
 	val rangeHeader = request.headers["Range"]
-	if (rangeHeader != null) {
+	val totalSize = if (rangeHeader != null) {
 		val parsed = HTTPRangeHeader.parse(rangeHeader, size)
 		transferenceRegion = parsed.ranges.first()
 		parsed.totalSize
@@ -94,22 +94,22 @@ fun getFile(
 			}; filename=\"$fileName\""
 		)
 	}
-	var length = (transferenceRegion.second - transferenceRegion.first) + 1
 	if (modifiedSince == lastModifiedStr) {
 		HTTPResponse(
-			304, request.version, headers, length
+			304, request.version, headers, totalSize
 		).write(out)
 	} else {
 		HTTPResponse(
 			if (rangeHeader != null) 206 else 200, request.version,
-			headers, length
+			headers, totalSize
 		).write(out)
 		if (request.method == HTTPMethod.GET) {
 			channel.position(transferenceRegion.first)
 			val buffer = ByteBuffer.allocateDirect(1000000)
+			var remainder = totalSize
 			try {
-				while (length > 0) {
-					buffer.limit(min(buffer.capacity(), min(length, Int.MAX_VALUE.toLong()).toInt()))
+				while (remainder > 0) {
+					buffer.limit(min(buffer.capacity(), min(remainder, Int.MAX_VALUE.toLong()).toInt()))
 					val next = channel.read(buffer)
 					if (next == -1) break
 					buffer.flip()
@@ -117,7 +117,7 @@ fun getFile(
 					buffer.get(readIn)
 					out.write(readIn)
 					buffer.flip()
-					length -= next
+					remainder -= next
 				}
 			} catch (_: SocketException) {
 			} catch (e: Exception) {
