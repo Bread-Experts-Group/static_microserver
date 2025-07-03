@@ -74,6 +74,7 @@ fun staticMain(
 	Thread.currentThread().name = "Static Main"
 	mainLogger.info("Server loop (${serverSocket.localSocketAddress})")
 	val stores = arguments.getsRequired<String>("store").map { Path(it).toRealPath() }
+	val okayHeaders = methods.keys.joinToString(", ") { it.name }
 	while (true) {
 		val sock = serverSocket.accept()
 		sock.keepAlive = true
@@ -96,7 +97,8 @@ fun staticMain(
 					) else selector.sendResponse(
 						HTTPResponse(
 							request,
-							405
+							405,
+							mutableMapOf("allow" to okayHeaders)
 						)
 					)
 				}.onFailure {
