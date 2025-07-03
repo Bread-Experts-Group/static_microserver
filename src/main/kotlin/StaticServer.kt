@@ -1,23 +1,17 @@
 package org.bread_experts_group.static_microserver
 
-import org.bread_experts_group.Flag
-import org.bread_experts_group.MultipleArgs
-import org.bread_experts_group.SingleArgs
-import org.bread_experts_group.http.HTTPMethod
-import org.bread_experts_group.http.HTTPRequest
-import org.bread_experts_group.http.HTTPResponse
-import org.bread_experts_group.http.HTTPVersion
-import org.bread_experts_group.logging.ColoredLogger
-import org.bread_experts_group.readArgs
-import org.bread_experts_group.stringToInt
-import java.io.File
+import org.bread_experts_group.command_line.ArgumentContainer
+import org.bread_experts_group.command_line.Flag
+import org.bread_experts_group.command_line.readArgs
+import org.bread_experts_group.command_line.stringToInt
+import org.bread_experts_group.http.*
+import org.bread_experts_group.logging.ColoredHandler
+import org.bread_experts_group.stream.FailQuickInputStream
 import java.io.IOException
-import java.net.InetSocketAddress
-import java.net.ServerSocket
-import java.net.Socket
-import java.net.SocketException
-import java.net.SocketTimeoutException
-import java.net.URISyntaxException
+import java.net.*
+import java.nio.file.Path
+import java.util.logging.Level
+import kotlin.io.path.Path
 
 val standardFlags = listOf(
 	Flag(
@@ -26,11 +20,11 @@ val standardFlags = listOf(
 	),
 	Flag(
 		"port", "The TCP port on which to listen to for requests.",
-		default = 80, conv = ::stringToInt
+		default = 80, conv = stringToInt(0..65535)
 	)
 )
 
-private val socketLogger = ColoredLogger.newLogger("Static Server Socket Retrieval")
+private val socketLogger = ColoredHandler.newLogger("Static Server Socket Retrieval")
 fun getSocket(
 	args: Array<String>,
 	projectName: String,
@@ -43,9 +37,9 @@ fun getSocket(
 	projectName: String,
 	projectUsage: String,
 	flags: List<Flag<*>>
-): Triple<SingleArgs, MultipleArgs, ServerSocket> {
+): Pair<ArgumentContainer, ServerSocket> {
 	socketLogger.fine("Argument read")
-	val (singleArgs, multipleArgs) = readArgs(
+	val arguments = readArgs(
 		args,
 		standardFlags + flags,
 		projectName,
@@ -56,48 +50,59 @@ fun getSocket(
 	socketLogger.fine("Socket bind")
 	serverSocket.bind(
 		InetSocketAddress(
-			singleArgs["ip"] as String,
-			singleArgs["port"] as Int
+			arguments.getRequired<String>("ip"),
+			arguments.getRequired("port")
 		)
 	)
 	socketLogger.finer("Return")
-	return Triple(singleArgs, multipleArgs, serverSocket)
+	return Pair(arguments, serverSocket)
 }
 
-typealias ServerHandle = (stores: List<File>, request: HTTPRequest, sock: Socket) -> Unit
+typealias ServerHandle = (
+	selector: HTTPProtocolSelector,
+	stores: List<Path>,
+	request: HTTPRequest,
+	sock: Socket
+) -> Unit
 
-private val mainLogger = ColoredLogger.newLogger("Static Server Main")
+private val mainLogger = ColoredHandler.newLogger("Static Server Main")
 fun staticMain(
-	multipleArgs: MultipleArgs,
+	arguments: ArgumentContainer,
 	serverSocket: ServerSocket,
 	methods: Map<HTTPMethod, ServerHandle>
 ) {
 	Thread.currentThread().name = "Static Main"
 	mainLogger.info("Server loop (${serverSocket.localSocketAddress})")
-	val stores = multipleArgs.getValue("store").map { File(it as String).absoluteFile.normalize() }
+	val stores = arguments.getsRequired<String>("store").map { Path(it).toRealPath() }
 	while (true) {
 		val sock = serverSocket.accept()
 		sock.keepAlive = true
-		sock.setSoLinger(true, 2)
+		val selector = HTTPProtocolSelector(
+			HTTPVersion.HTTP_1_1,
+			FailQuickInputStream(sock.inputStream),
+			sock.outputStream,
+			true
+		)
 		Thread.ofVirtual().name("Static ${sock.remoteSocketAddress}").start {
-			val localLogger = ColoredLogger.newLogger("${sock.remoteSocketAddress}")
+			val localLogger = ColoredHandler.newLogger("${sock.remoteSocketAddress}")
 			try {
-				while (true) {
-					val request = try {
-						HTTPRequest.read(sock.inputStream)
-					} catch (_: URISyntaxException) {
-						HTTPResponse(404, HTTPVersion.HTTP_1_1).write(sock.outputStream)
-						break
-					}
+				while (true) selector.nextRequest().onSuccess { request ->
 					val method = methods[request.method]
 					if (method != null) method.invoke(
+						selector,
 						stores,
 						request,
 						sock
-					) else {
-						HTTPResponse(405, request.version).write(sock.outputStream)
-						break
-					}
+					) else selector.sendResponse(
+						HTTPResponse(
+							request,
+							405
+						)
+					)
+				}.onFailure {
+					if (it !is FailQuickInputStream.EndOfStream)
+						localLogger.log(Level.SEVERE, it) { "Error while reading request" }
+					break
 				}
 			} catch (_: SocketTimeoutException) {
 			} catch (_: SocketException) {

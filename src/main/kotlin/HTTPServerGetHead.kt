@@ -1,45 +1,44 @@
 package org.bread_experts_group.static_microserver
 
 import org.bread_experts_group.http.HTTPMethod
-import org.bread_experts_group.http.HTTPRangeHeader
+import org.bread_experts_group.http.HTTPProtocolSelector
 import org.bread_experts_group.http.HTTPRequest
 import org.bread_experts_group.http.HTTPResponse
+import org.bread_experts_group.http.header.HTTPRangeHeader
 import org.bread_experts_group.http.html.DirectoryListing
 import org.bread_experts_group.http.html.VirtualFileChannel
-import org.bread_experts_group.logging.ColoredLogger
-import java.io.File
-import java.io.FileReader
-import java.io.OutputStream
-import java.lang.Exception
-import java.net.SocketException
-import java.nio.ByteBuffer
+import org.bread_experts_group.logging.ColoredHandler
+import org.bread_experts_group.stream.BufferedByteChannelInputStream
+import java.io.InputStream
+import java.net.URLEncoder
+import java.nio.CharBuffer
 import java.nio.channels.FileChannel
 import java.nio.channels.SeekableByteChannel
+import java.nio.charset.CharsetEncoder
+import java.nio.charset.CodingErrorAction
+import java.nio.file.Path
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import java.util.Base64
-import java.util.Locale
-import java.util.logging.Level
-import kotlin.math.min
-import kotlin.text.substringAfter
+import java.util.*
+import kotlin.io.path.*
 
 val unauthorizedHeadersGet = mapOf(
 	"WWW-Authenticate" to "Basic realm=\"Access to file GET\", charset=\"UTF-8\"",
 )
 
-private val getLogger = ColoredLogger.newLogger("Static Server GET/HEAD")
+private val getLogger = ColoredHandler.newLogger("Static Server GET/HEAD")
 private val base64Decoder = Base64.getDecoder()
 
 fun checkAuthorization(
 	request: HTTPRequest,
 	credentials: Map<String, String>
 ): HTTPResponse? {
-	val authorization = request.headers["Authorization"]
+	val authorization = request.headers["authorization"]
 	if (authorization == null) {
 		getLogger.warning { "No user provided, unauthorized for GET" }
-		return HTTPResponse(401, request.version, unauthorizedHeadersGet)
+		return HTTPResponse(request, 401, unauthorizedHeadersGet)
 	}
 	val pair = base64Decoder.decode(authorization.substringAfter("Basic "))
 		.decodeToString()
@@ -47,124 +46,124 @@ fun checkAuthorization(
 	val password = credentials[pair[0]]
 	if (password == null || password != pair[1]) {
 		getLogger.warning { "\"${pair[0]}\" unauthorized for GET, not a user or wrong password" }
-		return HTTPResponse(403, request.version, unauthorizedHeadersGet)
+		return HTTPResponse(request, 403, unauthorizedHeadersGet)
 	}
 	getLogger.info { "\"${pair[0]}\" authorized." }
 	return null
 }
 
+fun blankStream(n: Long) = object : InputStream() {
+	override fun available(): Int = n.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+	override fun read(): Int = -1
+}
+
+val asciiEncoder: CharsetEncoder = Charsets.US_ASCII.newEncoder()
+	.onMalformedInput(CodingErrorAction.REPLACE)
+	.onUnmappableCharacter(CodingErrorAction.REPLACE)
+	.replaceWith(byteArrayOf(0x5F))
+
 fun getFile(
+	selector: HTTPProtocolSelector,
 	request: HTTPRequest,
 	size: Long,
 	channel: SeekableByteChannel,
-	out: OutputStream,
 	fileName: String,
 	addedHeaders: Map<String, String>,
 	lastModified: Long = System.currentTimeMillis()
-) {
-	val modifiedSince = request.headers["If-Modified-Since"]
+): Unit = channel.use {
+	val modifiedSince = request.headers["if-modified-since"]
 	val lastModifiedStr = DateTimeFormatter.RFC_1123_DATE_TIME.format(
 		ZonedDateTime.ofInstant(
 			Instant.ofEpochMilli(lastModified),
 			ZoneOffset.UTC
 		)
 	)
-	var transferenceRegion = 0L to size
-	val rangeHeader = request.headers["Range"]
+	var transferenceRegion = 0L to size - 1
+	val rangeHeader = request.headers["range"]
 	val totalSize = if (rangeHeader != null) {
 		val parsed = HTTPRangeHeader.parse(rangeHeader, size)
 		transferenceRegion = parsed.ranges.first()
 		parsed.totalSize
 	} else size
 	val headers = buildMap {
-		set("Accept-Ranges", "bytes")
+		set("accept-ranges", "bytes")
 		if (rangeHeader != null) {
 			set(
 				"Content-Range",
 				"bytes ${transferenceRegion.first}-${transferenceRegion.second}/$size"
 			)
 		}
-		set("Last-Modified", lastModifiedStr)
+		set("last-modified", lastModifiedStr)
 		val (mime, download) = mimeMap[fileName.substringAfterLast('.')]
 			?: ("application/octet-stream" to DownloadFlag.DOWNLOAD)
-		set("Content-Type", mime)
+		set("content-type", mime)
+		val safeName = asciiEncoder.encode(CharBuffer.wrap(fileName)).let {
+			val readInto = ByteArray(it.limit())
+			it.get(readInto)
+			readInto.toString(Charsets.US_ASCII)
+		}
 		set(
-			"Content-Disposition",
+			"content-disposition",
 			"${
 				if (download == DownloadFlag.DOWNLOAD) "attachment"
 				else "inline"
-			}; filename=\"$fileName\""
+			}; filename=\"$safeName\"; filename*=UTF-8''${URLEncoder.encode(fileName, Charsets.UTF_8)}"
 		)
 	} + addedHeaders
-	if (modifiedSince == lastModifiedStr) {
-		HTTPResponse(
-			304, request.version, headers, totalSize
-		).write(out)
-	} else {
-		HTTPResponse(
-			if (rangeHeader != null) 206 else 200, request.version,
-			headers, totalSize
-		).write(out)
-		if (request.method == HTTPMethod.GET) {
-			channel.position(transferenceRegion.first)
-			val buffer = ByteBuffer.allocateDirect(1000000)
-			var remainder = totalSize
-			try {
-				while (remainder > 0) {
-					buffer.limit(min(buffer.capacity(), min(remainder, Int.MAX_VALUE.toLong()).toInt()))
-					val next = channel.read(buffer)
-					if (next == -1) break
-					buffer.flip()
-					val readIn = ByteArray(next)
-					buffer.get(readIn)
-					out.write(readIn)
-					buffer.flip()
-					remainder -= next
-				}
-			} catch (_: SocketException) {
-			} catch (e: Exception) {
-				getLogger.log(Level.WARNING, e) { "Problem while sending data to client [channel]" }
-			}
-		}
+
+	if (modifiedSince == lastModifiedStr) selector.sendResponse(
+		HTTPResponse(request, 304, headers, blankStream(totalSize))
+	) else {
+		selector.sendResponse(
+			HTTPResponse(
+				request, if (rangeHeader != null) 206 else 200,
+				headers,
+				if (request.method == HTTPMethod.GET) BufferedByteChannelInputStream(
+					channel,
+					listOf(transferenceRegion)
+				) else blankStream(totalSize)
+			)
+		)
 	}
-	channel.close()
 }
 
 fun httpServerGetHead(
-	stores: List<File>,
+	selector: HTTPProtocolSelector,
+	stores: List<Path>,
 	request: HTTPRequest,
-	out: OutputStream,
 	getCredentials: Map<String, String>? = null,
 	directoryListing: Boolean = false
 ) {
 	if (!getCredentials.isNullOrEmpty()) {
 		val failResponse = checkAuthorization(request, getCredentials)
-		if (failResponse != null) return failResponse.write(out)
+		if (failResponse != null) {
+			selector.sendResponse(failResponse)
+			return
+		}
 	}
 
 	if (request.path.path == '/' + DirectoryListing.directoryListingFile) {
 		val style = DirectoryListing.directoryListingStyle.toByteArray()
 		getFile(
+			selector,
 			request,
 			style.size.toLong(),
 			VirtualFileChannel(style),
-			out,
 			DirectoryListing.directoryListingFile,
 			emptyMap()
 		)
-		out.flush()
 		return
 	}
 
 	val storePath = '.' + request.path.path
 	stores.firstOrNull {
-		val requestedPath = it.resolve(storePath).canonicalFile
-		if (!(requestedPath.canRead() && requestedPath.startsWith(it))) return@firstOrNull false
+		val requestedPath = it.resolve(storePath)
+		if (!(requestedPath.isReadable() && requestedPath.startsWith(it))) return@firstOrNull false
 
-		val modifierFile = requestedPath.parentFile.resolve("beg_sm_local_modifier.begsm")
+		val modifierFile = requestedPath.parent.resolve("beg_sm_local_modifier.begsm")
 		val addedHeaders = mutableMapOf<String, String>()
-		if (modifierFile.exists() && modifierFile.canRead()) {
-			val reader = FileReader(modifierFile)
+		if (modifierFile.exists() && modifierFile.isReadable()) {
+			val reader = modifierFile.reader()
 			var thisIsSet = false
 			for (line in reader.readLines()) {
 				if (line.startsWith('#') || line.isBlank()) continue
@@ -180,19 +179,19 @@ fun httpServerGetHead(
 			}
 		}
 
-		if (requestedPath.isFile) {
+		if (requestedPath.isRegularFile()) {
 			getFile(
+				selector,
 				request,
-				requestedPath.length(),
-				FileChannel.open(requestedPath.toPath()),
-				out,
+				requestedPath.fileSize(),
+				FileChannel.open(requestedPath),
 				requestedPath.name,
 				addedHeaders
 			)
 			true
-		} else if (directoryListing && requestedPath.isDirectory) {
-			getLogger.fine { "Directory listing for \"${requestedPath.invariantSeparatorsPath}\"" }
-			val locale = request.headers["Accept-Language"]?.let { languageTags ->
+		} else if (directoryListing && requestedPath.isDirectory()) {
+			getLogger.fine { "Directory listing for \"${requestedPath.invariantSeparatorsPathString}\"" }
+			val locale = request.headers["accept-language"]?.let { languageTags ->
 				Locale.lookup(
 					Locale.LanguageRange.parse(languageTags),
 					Locale.getAvailableLocales().toList()
@@ -202,29 +201,31 @@ fun httpServerGetHead(
 				it, requestedPath,
 				locale
 			)
-			val etag = request.headers["If-None-Match"]
 			val wrappedHash = "\"$hash\""
 			val headers = mapOf(
-				"Content-Type" to "text/html;charset=UTF-8",
-				"ETag" to wrappedHash
+				"content-type" to "text/html;charset=UTF-8",
+				"content-disposition" to "inline; filename=\"dirList-$hash.html\"",
+				"etag" to wrappedHash
 			) + addedHeaders
-			if (etag == "*" || etag?.contains(wrappedHash) == true) {
-				HTTPResponse(
-					304, request.version, headers
-				).write(out)
-			} else {
+			val etag = request.headers["if-none-match"]
+			if (etag != null && (etag == "*" || etag.contains(wrappedHash))) selector.sendResponse(
+				HTTPResponse(request, 304, headers)
+			) else {
 				val encoded = data.encodeToByteArray()
-				HTTPResponse(
-					200, request.version, headers, encoded.size.toLong()
-				).write(out)
-				if (request.method == HTTPMethod.GET) out.write(encoded)
+				selector.sendResponse(
+					HTTPResponse(
+						request, 200, headers,
+						if (request.method == HTTPMethod.GET) encoded.inputStream()
+						else blankStream(encoded.size.toLong())
+					)
+				)
 			}
 			true
 		} else false
 	} ?: run {
 		getLogger.warning { "No found file for \"$storePath\"" }
-		HTTPResponse(404, request.version)
-			.write(out)
+		selector.sendResponse(
+			HTTPResponse(request, 404)
+		)
 	}
-	out.flush()
 }

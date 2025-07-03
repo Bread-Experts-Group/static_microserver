@@ -1,11 +1,11 @@
 package org.bread_experts_group.static_microserver
 
-import org.bread_experts_group.Flag
+import org.bread_experts_group.command_line.Flag
 import org.bread_experts_group.http.HTTPMethod
 import org.bread_experts_group.http.html.DirectoryListing
 
 fun main(args: Array<String>) {
-	val (singleArgs, multipleArgs, serverSocket) = getSocket(
+	val (arguments, serverSocket) = getSocket(
 		args,
 		"static_microserver",
 		"Distribution of software for Bread Experts Group static file servers.",
@@ -28,18 +28,18 @@ fun main(args: Array<String>) {
 			)
 		)
 	)
-	val getCredentialTable = multipleArgs["get_credential"]?.associate {
-		val credential = (it as String).split(',', limit = 2)
+	val getCredentialTable = arguments.gets<String>("get_credential")?.associate {
+		val credential = it.split(',', limit = 2)
 		credential[0] to credential[1]
 	}
-	val color = (singleArgs["directory_listing_color"] as String).let { if (it == "off") null else it }
+	val color = arguments.getRequired<String>("directory_listing_color").let { if (it == "off") null else it }
 	DirectoryListing.css = "color:white;background-color:$color"
-	val getHead: ServerHandle = { stores, request, sock ->
+	val getHead: ServerHandle = { selector, stores, request, sock ->
 		httpServerGetHead(
-			stores, request, sock.outputStream,
+			selector, stores, request,
 			getCredentialTable,
 			color != null
 		)
 	}
-	staticMain(multipleArgs, serverSocket, mapOf(HTTPMethod.GET to getHead, HTTPMethod.HEAD to getHead))
+	staticMain(arguments, serverSocket, mapOf(HTTPMethod.GET to getHead, HTTPMethod.HEAD to getHead))
 }
