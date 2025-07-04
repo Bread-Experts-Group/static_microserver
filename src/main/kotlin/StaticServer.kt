@@ -102,8 +102,11 @@ fun staticMain(
 						)
 					)
 				}.onFailure {
-					if (it !is FailQuickInputStream.EndOfStream)
-						localLogger.log(Level.SEVERE, it) { "Error while reading request" }
+					if (
+						it !is FailQuickInputStream.EndOfStream &&
+						it !is SocketException &&
+						it !is URISyntaxException
+					) localLogger.log(Level.SEVERE, it) { "Error while reading request" }
 					break
 				}
 			} catch (_: SocketTimeoutException) {

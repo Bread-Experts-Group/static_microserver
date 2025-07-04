@@ -65,8 +65,8 @@ fun getFile(
 	request: HTTPRequest,
 	accept: HTTPAcceptHeader?,
 	timings: HTTPServerTimingHeader,
-	size: Long,
 	channel: SeekableByteChannel,
+	size: Long,
 	fileName: String,
 	addedHeaders: Map<String, String>,
 	lastModified: Long
@@ -92,7 +92,6 @@ fun getFile(
 	val lastModifiedStr: String
 	var transferenceRegion: Pair<Long, Long>
 	val rangeHeader: String?
-	val totalSize: Long
 	val headers: Map<String, String>
 	timings.time("headers", "Compute headers for file req.") {
 		modifiedSince = request.headers["if-modified-since"]
@@ -102,13 +101,11 @@ fun getFile(
 				ZoneOffset.UTC
 			)
 		)
-		transferenceRegion = 0L to size - 1
 		rangeHeader = request.headers["range"]
-		totalSize = if (rangeHeader != null) {
+		transferenceRegion = if (rangeHeader != null) {
 			val parsed = HTTPRangeHeader.parse(rangeHeader, size)
-			transferenceRegion = parsed.ranges.first()
-			parsed.totalSize
-		} else size
+			parsed.ranges.first()
+		} else 0L to size - 1
 		headers = buildMap {
 			set("accept-ranges", "bytes")
 			if (rangeHeader != null) {
@@ -187,8 +184,8 @@ fun httpServerGetHead(
 			request,
 			accept,
 			timings,
-			style.size.toLong(),
 			VirtualFileChannel(style),
+			style.size.toLong(),
 			DirectoryListing.directoryListingFile,
 			emptyMap(),
 			styleTime
@@ -229,8 +226,8 @@ fun httpServerGetHead(
 				request,
 				accept,
 				timings,
-				requestedPath.fileSize(),
 				FileChannel.open(requestedPath),
+				requestedPath.fileSize(),
 				requestedPath.name,
 				addedHeaders,
 				requestedPath.getLastModifiedTime().toMillis()

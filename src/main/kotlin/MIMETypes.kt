@@ -52,6 +52,7 @@ val mimeMap = mapOf(
 	"sha512" to ("text/plain;charset=UTF-8" to DownloadFlag.DISPLAY),
 	"asc" to ("text/plain;charset=UTF-8" to DownloadFlag.DISPLAY),
 	"begsm" to ("text/plain;charset=UTF-8" to DownloadFlag.DISPLAY),
+	"ini" to ("text/plain;charset=UTF-8" to DownloadFlag.DISPLAY),
 	"kt" to ("text/plain;charset=UTF-8" to DownloadFlag.DISPLAY),
 	"css" to ("text/css;charset=UTF-8" to DownloadFlag.DISPLAY),
 	"csv" to ("text/csv;charset=UTF-8" to DownloadFlag.DISPLAY),
