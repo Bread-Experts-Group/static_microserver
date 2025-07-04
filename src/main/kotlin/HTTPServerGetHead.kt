@@ -55,8 +55,8 @@ fun checkAuthorization(
 	return null
 }
 
-fun blankStream(n: Long) = object : InputStream() {
-	override fun available(): Int = n.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+fun blankStream() = object : InputStream() {
+	override fun available(): Int = 0
 	override fun read(): Int = -1
 }
 
@@ -139,7 +139,7 @@ fun getFile(
 
 	val timedHeaders = headers + ("server-timing" to timings.toString())
 	if (modifiedSince == lastModifiedStr) selector.sendResponse(
-		HTTPResponse(request, 304, timedHeaders, blankStream(totalSize))
+		HTTPResponse(request, 304, timedHeaders, blankStream())
 	) else {
 		selector.sendResponse(
 			HTTPResponse(
@@ -148,7 +148,7 @@ fun getFile(
 				if (request.method == HTTPMethod.GET) BufferedByteChannelInputStream(
 					channel,
 					listOf(transferenceRegion)
-				) else blankStream(totalSize)
+				) else blankStream()
 			)
 		)
 	}
@@ -271,7 +271,7 @@ fun httpServerGetHead(
 					HTTPResponse(
 						request, 200, headers,
 						if (request.method == HTTPMethod.GET) encoded.inputStream()
-						else blankStream(encoded.size.toLong())
+						else blankStream()
 					)
 				)
 			}
