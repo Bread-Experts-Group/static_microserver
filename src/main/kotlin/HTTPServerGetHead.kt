@@ -80,7 +80,7 @@ fun getFile(
 			selector.sendResponse(
 				HTTPResponse(
 					request, 406,
-					baseHeaders + ("server-timing" to timings.asString())
+					baseHeaders + ("server-timing" to timings.toString())
 				)
 			)
 			return false
@@ -137,7 +137,7 @@ fun getFile(
 		} + baseHeaders
 	}
 
-	val timedHeaders = headers + ("server-timing" to timings.asString())
+	val timedHeaders = headers + ("server-timing" to timings.toString())
 	if (modifiedSince == lastModifiedStr) selector.sendResponse(
 		HTTPResponse(request, 304, timedHeaders, blankStream(totalSize))
 	) else {
@@ -259,7 +259,7 @@ fun httpServerGetHead(
 			val wrappedHash = "\"$hash\""
 			val headers = baseHeaders + mapOf(
 				"content-disposition" to "inline; filename=\"dirList-$hash.html\"",
-				"server-timing" to timings.asString(),
+				"server-timing" to timings.toString(),
 				"etag" to wrappedHash
 			)
 			val etag = request.headers["if-none-match"]
