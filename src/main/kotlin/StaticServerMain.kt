@@ -1,8 +1,10 @@
 package org.bread_experts_group.static_microserver
 
 import org.bread_experts_group.command_line.Flag
-import org.bread_experts_group.http.HTTPMethod
-import org.bread_experts_group.http.html.DirectoryListing
+import org.bread_experts_group.logging.ColoredHandler
+import org.bread_experts_group.protocol.http.HTTPMethod
+import org.bread_experts_group.protocol.http.header.HTTPForwardedHeader
+import org.bread_experts_group.protocol.http.html.DirectoryListing
 
 val staticFlags = listOf(
 	Flag(
@@ -36,11 +38,18 @@ fun main(args: Array<String>) {
 	)
 	val color = arguments.getRequired<String>("directory_listing_color").let { if (it == "off") null else it }
 	DirectoryListing.css = "color:white;background-color:$color"
-	val getHead: ServerHandle = { selector, stores, request, sock ->
+	val getHead: ServerHandle = { selector, stores, request, sock, args ->
+		val loggerName = StringBuilder("Static GET/HEAD : ")
+		loggerName.append(sock.remoteAddress)
+		val logger = ColoredHandler.newLogger(loggerName.toString())
+		request.headers["forwarded"]?.let {
+			val forwardees = HTTPForwardedHeader.parse(it).forwardees
+			logger.info("Request forwarded: $forwardees")
+		}
 		httpServerGetHead(
-			selector, stores, request,
+			logger, selector, stores, request,
 			arguments.gets<Pair<String, String>>("get_credential")?.toMap(),
-			color != null
+			color != null, args
 		)
 	}
 	staticMain(arguments, serverSocket, mapOf(HTTPMethod.GET to getHead, HTTPMethod.HEAD to getHead))
