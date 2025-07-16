@@ -1,5 +1,6 @@
 package org.bread_experts_group.static_microserver
 
+import org.bread_experts_group.command_line.ArgumentContainer
 import org.bread_experts_group.command_line.Flag
 import org.bread_experts_group.logging.ColoredHandler
 import org.bread_experts_group.protocol.http.HTTPMethod
@@ -29,6 +30,28 @@ val staticFlags = listOf(
 	)
 )
 
+private var directoryListing = false
+private var getCredentials: Map<String, String>? = null
+fun initGET(args: ArgumentContainer) {
+	val color = args.getRequired<String>("directory_listing_color")
+	if (color != "off") {
+		DirectoryListing.css = "color:white;background-color:$color"
+		directoryListing = true
+	}
+	getCredentials = args.gets<Pair<String, String>>("get_credential")?.toMap()
+}
+
+val getHead: ServerHandle = { selector, stores, request, sock, arguments ->
+	val loggerName = StringBuilder("Static GET/HEAD : ")
+	loggerName.append(sock.remoteAddress)
+	val logger = ColoredHandler.newLogger(loggerName.toString())
+	request.headers["forwarded"]?.let {
+		val forwardees = HTTPForwardedHeader.parse(it).forwardees
+		logger.info("Request forwarded: $forwardees")
+	}
+	httpServerGetHead(logger, selector, stores, request, getCredentials, directoryListing, arguments)
+}
+
 fun main(args: Array<String>) {
 	val (arguments, serverSocket) = getSocket(
 		args,
@@ -36,21 +59,6 @@ fun main(args: Array<String>) {
 		"Distribution of software for Bread Experts Group static file servers.",
 		staticFlags
 	)
-	val color = arguments.getRequired<String>("directory_listing_color").let { if (it == "off") null else it }
-	DirectoryListing.css = "color:white;background-color:$color"
-	val getHead: ServerHandle = { selector, stores, request, sock, args ->
-		val loggerName = StringBuilder("Static GET/HEAD : ")
-		loggerName.append(sock.remoteAddress)
-		val logger = ColoredHandler.newLogger(loggerName.toString())
-		request.headers["forwarded"]?.let {
-			val forwardees = HTTPForwardedHeader.parse(it).forwardees
-			logger.info("Request forwarded: $forwardees")
-		}
-		httpServerGetHead(
-			logger, selector, stores, request,
-			arguments.gets<Pair<String, String>>("get_credential")?.toMap(),
-			color != null, args
-		)
-	}
+	initGET(arguments)
 	staticMain(arguments, serverSocket, mapOf(HTTPMethod.GET to getHead, HTTPMethod.HEAD to getHead))
 }

@@ -71,7 +71,7 @@ typealias ServerHandle = (
 	stores: List<Path>,
 	request: HTTPRequest,
 	sock: SocketChannel,
-	args: ArgumentContainer
+	arguments: ArgumentContainer
 ) -> Unit
 
 private val mainLogger = ColoredHandler.newLogger("Static Server Main")
