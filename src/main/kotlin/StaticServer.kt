@@ -5,7 +5,6 @@ import org.bread_experts_group.logging.ColoredHandler
 import org.bread_experts_group.protocol.http.*
 import java.io.IOException
 import java.net.InetSocketAddress
-import java.net.SocketTimeoutException
 import java.net.StandardSocketOptions
 import java.net.URISyntaxException
 import java.nio.channels.ServerSocketChannel
@@ -119,7 +118,6 @@ fun staticMain(
 					) localLogger.log(Level.SEVERE, it) { "Error while reading request" }
 					break
 				}
-			} catch (_: SocketTimeoutException) {
 			} catch (_: IOException) {
 			} catch (e: Exception) {
 				localLogger.warning { "General failure; [${e.javaClass.canonicalName}] ${e.localizedMessage}" }

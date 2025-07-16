@@ -1,9 +1,6 @@
 package org.bread_experts_group.static_microserver
 
-import org.bread_experts_group.channel.ByteArrayChannel
-import org.bread_experts_group.channel.EmptyChannel
-import org.bread_experts_group.channel.SplitSeekableChannel
-import org.bread_experts_group.channel.WindowedSeekableByteChannel
+import org.bread_experts_group.channel.*
 import org.bread_experts_group.command_line.ArgumentContainer
 import org.bread_experts_group.protocol.http.HTTPMethod
 import org.bread_experts_group.protocol.http.HTTPProtocolSelector
@@ -193,6 +190,7 @@ fun httpServerGetHead(
 	directoryListing: Boolean = false,
 	arguments: ArgumentContainer
 ) {
+	request.data.skip()
 	val timings = HTTPServerTimingHeader(DurationUnit.MILLISECONDS)
 	if (
 		timings.time("auth", "GET Authorization") {
