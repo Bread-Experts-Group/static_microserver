@@ -120,7 +120,7 @@ fun staticMain(
 				}
 			} catch (_: IOException) {
 			} catch (e: Exception) {
-				localLogger.warning { "General failure; [${e.javaClass.canonicalName}] ${e.localizedMessage}" }
+				localLogger.log(Level.SEVERE, e) { "General failure" }
 			} finally {
 				try {
 					sock.shutdownOutput()
